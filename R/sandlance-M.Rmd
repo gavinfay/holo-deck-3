@@ -45,3 +45,7 @@ longevityM
 ```
 
 
+<!-- americanus K estimate from web version , need to figure out which columns through rfishbase ccorrespond to which tables. -->
+<!-- ```{r} -->
+<!-- K = log(3)/4.6 -->
+<!-- ``` -->
