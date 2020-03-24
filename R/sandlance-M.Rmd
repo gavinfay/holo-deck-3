@@ -1,0 +1,47 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#remotes::install_github("ropensci/rfishbase")
+
+library(tidyverse)
+library(fishmethods)
+library(rfishbase)
+```
+
+## sand lance M
+
+pull information from fishbase and then apply empirical M estimators to information.
+
+```{r pulldata}
+fish <- species_list(Genus = "Ammodytes")
+fish
+sl_data <- species(fish)
+sl_data
+```
+
+
+Use info from
+[https://rdrr.io/cran/fishmethods/man/M.empirical.html](https://rdrr.io/cran/fishmethods/man/M.empirical.html)
+
+Code below does the longevity estimates from Hoenig (1983) & Then et al. (2015)
+
+```{r analysis}
+longevityM <- sl_data %>% 
+  mutate(LongevityWild = as.numeric(LongevityWild)) %>% 
+  #mutate(vonBertK = ifelse(
+  #  Species == "Ammodytes americanus", 
+  #  log(3)/4.6, NA)) %>% 
+  select(Species, LongevityWild) %>% #, vonBertK) %>% 
+  na.omit() %>% 
+  mutate(maxage = as.list(LongevityWild)) %>% #,
+         #vbK = as.list(vonBertK)) %>% 
+  mutate(M.estimates = map(maxage,  ~M.empirical(tmax = ., method = c(3, 10)))) %>% 
+  unnest()
+longevityM
+
+```
+
+
