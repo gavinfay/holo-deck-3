@@ -1,0 +1,115 @@
+---
+title: "noaa-sentiments"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(sentimentr)
+library(jsonlite)
+```
+## Look at sentiment of NOAA rulese since 2001.
+Goal is to see if 2020 rules post-COVID are more positive than pre-COVID.
+
+## Get data from the federal register
+Pull from the federal register
+Currently a hard-coded search for NOAA from 2001-01-01 to present, type = rules
+
+```{r pulldata}
+#temp$count
+#[1] 600137
+
+# xx <- fromJSON("https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%3Dnational-oceanic-and-atmospheric-administration%5D=&conditions%5Bpublication_date%5D%5Bgte%5D%5B%3D2001-01-01%5D=&format=json&page=0",flatten = TRUE)
+
+pull_regs <- function(x) {
+page <- paste0("https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%5D=national-oceanic-and-atmospheric-administration&conditions%5Bpublication_date%5D%5Bgte%5D=01%2F01%2F2001&conditions%5Bpublication_date%5D%5Blte%5D=05%2F28%2F2020&conditions%5Btype%5D%5B%5D=RULE&format=json&page=",x,"&per_page=1000")
+ xx <- fromJSON(page, flatten = TRUE)$results
+ return(xx)
+}
+#get number of pages in search
+page <- paste0("https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%5D=national-oceanic-and-atmospheric-administration&conditions%5Bpublication_date%5D%5Bgte%5D=01%2F01%2F2001&conditions%5Bpublication_date%5D%5Blte%5D=05%2F28%2F2020&conditions%5Btype%5D%5B%5D=RULE&format=json&page=0&per_page=1000")
+fpage <- fromJSON(page, flatten = TRUE)
+npage <- fpage$total_pages
+
+plan(multiprocess)
+system.time(regs <- future_map_dfr(1:npage,pull_regs))
+range(regs$publication_date)
+regs <- tibble(regs)
+```
+
+## Look at the sentiment of the abstracts of these rules
+
+Using `sentimentr` package. to find average sentiment of sentences in the abstracts.    
+
+```{r sentiment}
+# rules by NOAA
+regs_part <- regs %>%
+   unnest(cols = "agencies") %>% 
+   filter(name == "National Oceanic and Atmospheric Administration",
+          type == "Rule") %>%
+  I()
+regs_part
+
+# sentiments of sentences of the abstract and then average over abstracts
+regs_sentiment <- regs_part %>% 
+  select(publication_date, title, type, abstract, document_number) %>% 
+  rowid_to_column() %>% 
+  mutate(sentences = map(abstract,get_sentences),
+         sentiment = map(sentences,sentiment_by)) %>% 
+  unnest(cols = sentiment) %>% 
+  I()
+
+
+# make publication date more easy to work with
+regs_summary <- regs_sentiment %>% 
+  select(publication_date, ave_sentiment) %>% 
+  mutate(date = lubridate::date(publication_date),
+         year = lubridate::year(publication_date)) %>% 
+  I()
+
+```
+
+## viz
+
+summarize by year
+
+```{r plot-sentiment}
+
+
+regs_summary %>%
+  ggplot() +
+  #aes(y = ave_sentiment, x = factor(year)) +
+  aes(y = ave_sentiment, x = date) +
+  #geom_boxplot() +
+  geom_jitter(alpha = 0.5) +
+  geom_smooth() +
+  NULL
+
+regs_summary %>%
+  ggplot() +
+  aes(y = ave_sentiment, x = factor(year)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(x = "year",
+       y = "average sentiment",
+       title = "NOAA rules in federal register more positive in 2020",
+       subtitle = "average sentiment of abstracts of NOAA Rules",
+       caption = "\n@gavin_fay\ndata from https://federalregister.gov") +
+  #geom_jitter(alpha = 0.5) +
+  #geom_smooth() +
+  NULL
+```
+
+A qnd linear model suggests positive effect of 2020 is statistically clear.
+
+```{r}
+regs_lm <- regs_summary %>% 
+  mutate(twenty = ifelse(year==2020, 1, 0)) %>% 
+  lm(ave_sentiment~twenty,data=.) %>% 
+  tidy() %>% #augment()
+  I()
+regs_lm
+```
+
