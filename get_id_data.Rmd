@@ -81,7 +81,7 @@ files <- dir(path = "data/",  # I put your
 #files object is now a vector of filenames
 
 #read all the files in and combine everything into a single data frame
-id_sensor_data <- map_dfr(files, get_id_data) 
+id_sensor_data <- purrr::map_dfr(files, get_id_data) 
    # map runs 'get_id_data' for each of the things in 'files'.  
    # The '_dfr' puts the output into a data frame, combined via rows. 
 #id_sensor_data
