@@ -1,0 +1,91 @@
+---
+author: "Gavin Fay"
+date: "6/4/2020"
+output: html_document
+---
+
+Read in TXT file for JBA & HB.    
+Contains the example used to build the code, then I turn this into a function `get_id_data()` which takes a filename as input.  
+Finally, then show an application to run this over a list of filenames (say for all the .TXT files in a given directory), and combine them into a single data frame.  
+
+## load libraries
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(janitor)
+```
+
+## read in data file example
+
+```{r read-data}
+file <- "data/05262020_mckenzie_cartney.TXT"
+raw_data <- readLines("data/05262020_mckenzie_cartney.TXT", warn = TRUE)
+raw_data <- gsub("[^0-9A-Za-z///' ]", "", raw_data)
+# #raw_data
+# raw_data <- read.table("data/05262020_mckenzie_cartney.TXT", col.names = 1:100, fill = TRUE, sep = ",", stringsAsFactors = FALSE)
+start <- grep("ID  Sensor and GPS Positions", raw_data)
+stop <- grep("Manually Triggered Coded Records", raw_data)-2
+
+id_data <- read_table(file, skip = start, n_max = (stop-start-2))
+# tail(id_data)
+id_data <- janitor::clean_names(id_data) %>% 
+  separate(date_time, sep = 9, into = c("date", "time")) %>% 
+  mutate(date = lubridate::mdy(date),
+         time = lubridate::hms(time))
+    #year = lubridate::year(date),
+     #    month = lubridate::month(date),
+      #   day = lubridate::day(date)) #,
+         #time = lubridate::time(time))
+id_data
+```
+
+
+## create generic function to run for a given filename  
+
+```{r read-func}
+
+get_id_data <- function(file) {
+  #function reads in id sensor data from a single file
+  #
+  #first find where the data is
+  raw_data <- readLines(file, warn = TRUE)
+  raw_data <- gsub("[^0-9A-Za-z///' ]", "", raw_data)
+  start <- grep("ID  Sensor and GPS Positions", raw_data)
+  stop <- grep("Manually Triggered Coded Records", raw_data)-2
+
+  #now read in the data table
+  id_data <- readr::read_table(file, skip = start, n_max = (stop-start-2))
+  #do some minimal cleaning to get meaningful/useable columns, headers, etc.
+  id_data <- janitor::clean_names(id_data) %>%   #formats headers nicely
+    separate(date_time, sep = 9, into = c("date", "time")) %>%  #splits the date from the time
+    mutate(date = lubridate::mdy(date), #turns date string into a date object
+           time = lubridate::hms(time), #turns time string into a time object
+           filename = rep(file,nrow(id_data))) #create a column with the name of the file
+  return(id_data)
+}
+#example run of function
+file <- "data/05262020_mckenzie_cartney.TXT"
+get_id_data(file)
+
+```
+
+
+## Application over many files
+```{r}
+#find all the files with the right extension
+files <- dir(path = "data/",  # I put your 
+             pattern = "*.TXT",
+             full.names = TRUE)
+#files object is now a vector of filenames
+
+#read all the files in and combine everything into a single data frame
+id_sensor_data <- map_dfr(files, get_id_data) 
+   # map runs 'get_id_data' for each of the things in 'files'.  
+   # The '_dfr' puts the output into a data frame, combined via rows. 
+#id_sensor_data
+```
+
+
+
