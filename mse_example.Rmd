@@ -1,0 +1,132 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#devtools::install_github("timjmiller/wham", dependencies=TRUE, ref = "om_mode")
+library(wham)
+library(tidyverse)
+library(furrr)
+source("R/performance_metrics.R")
+source("R/wham_mse_functions.R")
+```
+
+## wham example 
+
+from simple_example_2.R
+`get_input()` gets the input list for a given scenario
+
+`do_wham_mse_sim()` runs a given simulation
+will want to abstract more of the set up from this as it's the same for each simulation
+
+
+## Set up some scenarios, dimensions, for running the MSE
+
+```{r}
+#dimension problem
+nbase = 2 #number of scenarios
+nsim = 5
+nprojyrs <- 40
+
+#generate seeds
+sim.seeds <- rep(sample(1:1000000,
+                    nsim,
+                    replace = FALSE), nbase)
+
+#set up output tibble
+mse_setup <- tibble(iscen = rep(1:nbase, each = nsim),
+                     isim = rep(1:nsim, times = nbase),
+                     seed = sim.seeds)
+
+#function to change some part of thhe input for a given scenario
+change_element <- function(x, object="catch_cv", changeto = c(0.2, 0.1)) {
+  x[[object]] <- changeto
+  return(x)
+}
+
+#get inputs for scenarios
+input_lists <- tibble(iscen = 1:nbase) %>% 
+  mutate(input = map(1:nbase, ~get_input(.x))) %>% 
+  #modify some element of the input for scenario 2
+  mutate(input = case_when(
+    iscen == 2 ~ map(input, ~change_element(., "catch_cv", c(0.2, 0.1))),
+    TRUE ~ input)) %>% 
+  I()
+
+#join scenario inputs to simulation output tibble
+mse_setup <- mse_setup %>% 
+  left_join(input_lists) 
+
+```
+
+
+load pre-run example MSE simulations
+
+```{r} 
+mse_output <- readRDS('data/mse_output.rds')
+```
+
+or... 
+
+## run the MSE
+
+(skip this chunk if you just want to look at organization of the output)
+
+```{r}
+#do the MSE for all simulations and scenarios
+future::plan(future::multisession)
+system.time(mse_output <- mse_setup %>% 
+#   mutate(wham = purrr::pmap(list(seed, input),
+#                              ~do_wham_mse_sim(seed = .x,
+#                                               input = .y,
+#                                               nprojyrs = 40)))
+  mutate(wham = furrr::future_pmap(list(seed, input),
+                            ~do_wham_mse_sim(seed = .x,
+                                             input = .y,
+                                             nprojyrs = nprojyrs))))
+
+#saveRDS(mse_output, file = "data/mse_output.rds")
+```
+
+pull out some parts of the output
+calculate some performance metrics
+
+```{r}
+mse_results <- mse_output %>% 
+  mutate(om_ssb = map(wham,
+                  ~pluck(.x$sim_data_series$SSB)),
+         refpts = map(wham, "refpts"),
+         ssb_metrics = pmap(list(om_ssb, refpts), get_ssb_metrics, nprojyrs = nprojyrs))
+```
+
+`mse_results` is a tibble containing the results, and vectors of the OM SSB, and a list of SSB performance metrics (fudging using SSBlim as SSBMSY for this demo)
+
+pull out the ssb metrics
+
+```{r}
+ssb_results <- mse_results %>% 
+  select(iscen, isim, ssb_metrics) %>% 
+  mutate(ssb_metrics = map(ssb_metrics, enframe)) %>% 
+  unnest() %>% 
+  mutate(value = map_dbl(value, I)) %>% 
+  rename(metric = name) %>% 
+  I()
+ssb_results
+```
+
+summarize across simulations by scenario
+25%, 50%, 75% quantiles
+```{r}
+quibble <- function(x, q = c(0.25, 0.5, 0.75)) {
+  tibble(x = quantile(x, q), q = q)
+}
+
+ssb_summary <- ssb_results %>% 
+  group_by(metric, iscen) %>% 
+  summarise(y = list(quibble(value, c(0.25, 0.5, 0.75)))) %>% 
+  tidyr::unnest(y) %>% 
+  I()
+ssb_summary
+```
+
