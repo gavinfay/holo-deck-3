@@ -1,0 +1,50 @@
+---
+title: "choice modeling sandbox"
+author: "Gavin Fay"
+date: "2/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mlogit)
+```
+
+example from documentation
+```{r}
+
+data("Fishing", package = "mlogit")
+Fishing$ispier <- as.factor(ifelse(Fishing$mode=="pier",1,0))
+#Fishing <- Fishing[,-10]
+Fish <- dfidx(Fishing, varying = 2:9, shape = "wide", choice = "mode")
+## a pure "conditional" model
+summary(mlogit(mode ~ price + catch + -1, data = Fish))
+
+
+
+```
+
+An example like the fluke with an 'opt out' option
+```{r}
+xx <- data.frame(id = rep(1:5,each=3),
+                 mode = rep(1:3,5),
+                 choice = c(1,0,0,1,0,0,0,1,0,0,1,0,0,0,1),
+             price = c(10,23,0,4,21,0,35,10,0,32,13,0,50,40,0),
+             out = rep(0,15))
+        #     price.1 = c(10,4,35,32,50),
+         #    price.2 = c(23,21,10,13,30)) #,
+#             price.3 = c(23,15,23,22,10),
+#             choice.set = rep(1:3,5)) #,
+            # xx$made = ifelse(xx$choice==xx$choice.set,1,0)
+            #xx$choice.set <- factor(xx$choice.set)
+            xx$out[seq(3,15,by=3)] <- 1
+xx
+xx2 <- dfidx(xx, shape = "long", choice = "choice")
+#m1 <- mlogit(choice ~ price + out | -1 | 0, data = xx2)
+m2 <- mlogit(choice ~ price + out | 0 | 0, data = xx2)
+#summary(m1)
+summary(m2)
+#predict(m1,newdata = xx2)
+predict(m2,newdata = xx2)
+```
+
