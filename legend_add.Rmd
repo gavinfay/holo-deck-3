@@ -1,0 +1,36 @@
+
+```{r}
+library(tidyverse)
+```
+
+first create a dummy data set
+```{r}
+mydata <- tibble(year = rep(1:5, each = 10),
+                 pred_value = runif(50),
+                 obs_value = runif(50),
+                 ilen = rep(1:10,5))
+mydata
+```
+make data long
+```{r}
+long_data <- mydata %>% 
+  pivot_longer(cols = c("pred_value","obs_value"),
+               names_to = c("type","junk"),names_sep = "_") %>% 
+  select(-junk)
+long_data
+```
+
+
+plot as before
+```{r}
+long_data %>% 
+  ggplot() +
+  aes(x=ilen, y = value, col = type) +
+  geom_line() +
+  #geom_line(aes(x=ilen, y=obs_value), col="green") +
+  facet_wrap(~year) +
+  theme(legend.position = "bottom") +
+  labs(col="") +
+  guides(col = guide_legend(nrow = 1))
+```
+
